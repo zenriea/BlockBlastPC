@@ -1,0 +1,17 @@
+# Build artifacts
+*.exe
+*.o
+*.res
+
+# Raylib library (too large, users should download separately)
+raylib-5.5_win64_mingw-w64/
+
+# W64devkit (compiler)
+w64devkit/
+
+# Data files (generated at runtime)
+highscore.dat
+settings.dat
+
+# Build folder
+build/
