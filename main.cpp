@@ -6,14 +6,17 @@
 #include <string>
 #include <cmath>
 
-// Oyun sabitleri
-const int SCREEN_WIDTH = 750;
-const int SCREEN_HEIGHT = 850;
-const int GRID_SIZE = 10;
-const int CELL_SIZE = 45;
-const int GRID_OFFSET_X = 150;
-const int GRID_OFFSET_Y = 200;
+// Game constants
+int SCREEN_WIDTH = 600;
+int SCREEN_HEIGHT = 800;
+const int GRID_SIZE = 8;
+const int CELL_SIZE = 50;
+int GRID_OFFSET_X = 100;
+int GRID_OFFSET_Y = 180;
 const int TITLE_BAR_HEIGHT = 40;
+bool isFullscreen = false;
+int windowedWidth = 600;
+int windowedHeight = 800;
 
 // Modern Renkler
 const Color BACKGROUND = { 20, 20, 35, 255 };
@@ -295,10 +298,41 @@ public:
     }
     
     void generateNewBlocks() {
-        float positions[3][2] = {{120, 690}, {320, 690}, {520, 690}};
+        // Calculate centered positions for 3 blocks below the grid
+        int gridTotalWidth = GRID_SIZE * CELL_SIZE;
+        int blockAreaY = GRID_OFFSET_Y + GRID_SIZE * CELL_SIZE + 40;
+        int blockSpacing = gridTotalWidth / 3;
+        
+        float positions[3][2] = {
+            {(float)(GRID_OFFSET_X + blockSpacing * 0 + blockSpacing / 2 - 40), (float)blockAreaY},
+            {(float)(GRID_OFFSET_X + blockSpacing * 1 + blockSpacing / 2 - 40), (float)blockAreaY},
+            {(float)(GRID_OFFSET_X + blockSpacing * 2 + blockSpacing / 2 - 40), (float)blockAreaY}
+        };
         
         for (int i = 0; i < 3; i++) {
-            int shapeIdx = rand() % SHAPES.size();
+            // Smart block selection - ensure at least one block can be placed
+            int shapeIdx;
+            int attempts = 0;
+            bool canPlace = false;
+            
+            do {
+                shapeIdx = rand() % SHAPES.size();
+                // Check if this shape can be placed anywhere
+                Block testBlock;
+                testBlock.shape = SHAPES[shapeIdx];
+                for (int gy = 0; gy < GRID_SIZE && !canPlace; gy++) {
+                    for (int gx = 0; gx < GRID_SIZE && !canPlace; gx++) {
+                        if (canPlaceBlock(testBlock, gx, gy)) canPlace = true;
+                    }
+                }
+                attempts++;
+            } while (!canPlace && attempts < 20);
+            
+            // If no placeable block found after 20 attempts, use a small block
+            if (!canPlace) {
+                shapeIdx = 0; // Single cell block - always fits somewhere or game is over
+            }
+            
             int colorIdx = rand() % NUM_COLORS;
             
             availableBlocks[i].shape = SHAPES[shapeIdx];
@@ -592,12 +626,13 @@ public:
         Vector2 mouse = GetMousePosition();
         hoveredButton = -1;
         
-        // Slider'lar
-        Rectangle musicSlider = { SCREEN_WIDTH/2 - 100, 300, 200, 20 };
-        Rectangle sfxSlider = { SCREEN_WIDTH/2 - 100, 380, 200, 20 };
-        Rectangle particlesBtn = { SCREEN_WIDTH/2 - 150, 440, 300, 50 };
-        Rectangle shakeBtn = { SCREEN_WIDTH/2 - 150, 510, 300, 50 };
-        Rectangle backBtn = { SCREEN_WIDTH/2 - 150, 600, 300, 60 };
+        // Sliders and buttons - must match drawSettings positions
+        Rectangle musicSlider = { SCREEN_WIDTH/2 - 100, 230, 200, 20 };
+        Rectangle sfxSlider = { SCREEN_WIDTH/2 - 100, 300, 200, 20 };
+        Rectangle particlesBtn = { SCREEN_WIDTH/2 - 150, 350, 300, 45 };
+        Rectangle shakeBtn = { SCREEN_WIDTH/2 - 150, 405, 300, 45 };
+        Rectangle fullscreenBtn = { SCREEN_WIDTH/2 - 150, 460, 300, 45 };
+        Rectangle backBtn = { SCREEN_WIDTH/2 - 150, 530, 300, 55 };
         
         if (CheckCollisionPointRec(mouse, backBtn)) hoveredButton = 4;
         
@@ -606,6 +641,7 @@ public:
             else if (CheckCollisionPointRec(mouse, sfxSlider)) draggingSlider = 2;
             else if (CheckCollisionPointRec(mouse, particlesBtn)) { settings.particlesEnabled = !settings.particlesEnabled; }
             else if (CheckCollisionPointRec(mouse, shakeBtn)) { settings.screenShakeEnabled = !settings.screenShakeEnabled; }
+            else if (CheckCollisionPointRec(mouse, fullscreenBtn)) { toggleFullscreen(); }
             else if (hoveredButton == 4) { saveSettings(); gameState = STATE_MENU; }
         }
         
@@ -615,6 +651,63 @@ public:
         } else if (draggingSlider == 2) {
             float val = (mouse.x - sfxSlider.x) / sfxSlider.width;
             settings.sfxVolume = fmax(0.0f, fmin(1.0f, val));
+        }
+    }
+    
+    void toggleFullscreen() {
+        isFullscreen = !isFullscreen;
+        if (isFullscreen) {
+            // Store current window size
+            windowedWidth = SCREEN_WIDTH;
+            windowedHeight = SCREEN_HEIGHT;
+            
+            // Get monitor dimensions
+            int monitor = GetCurrentMonitor();
+            int monW = GetMonitorWidth(monitor);
+            int monH = GetMonitorHeight(monitor);
+            
+            // Set to fullscreen size
+            SCREEN_WIDTH = monW;
+            SCREEN_HEIGHT = monH;
+            SetWindowPosition(0, 0);
+            SetWindowSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+        } else {
+            // Restore windowed mode
+            SCREEN_WIDTH = 600;
+            SCREEN_HEIGHT = 800;
+            SetWindowSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+            
+            // Center window
+            int monitor = GetCurrentMonitor();
+            int monW = GetMonitorWidth(monitor);
+            int monH = GetMonitorHeight(monitor);
+            SetWindowPosition((monW - SCREEN_WIDTH) / 2, (monH - SCREEN_HEIGHT) / 2);
+        }
+        
+        // Recalculate grid offset to center it
+        GRID_OFFSET_X = (SCREEN_WIDTH - GRID_SIZE * CELL_SIZE) / 2;
+        GRID_OFFSET_Y = (SCREEN_HEIGHT - GRID_SIZE * CELL_SIZE) / 2 - 50;
+        
+        // Update block positions
+        updateBlockPositions();
+    }
+    
+    void updateBlockPositions() {
+        int gridTotalWidth = GRID_SIZE * CELL_SIZE;
+        int blockAreaY = GRID_OFFSET_Y + GRID_SIZE * CELL_SIZE + 40;
+        int blockSpacing = gridTotalWidth / 3;
+        
+        float positions[3][2] = {
+            {(float)(GRID_OFFSET_X + blockSpacing * 0 + blockSpacing / 2 - 40), (float)blockAreaY},
+            {(float)(GRID_OFFSET_X + blockSpacing * 1 + blockSpacing / 2 - 40), (float)blockAreaY},
+            {(float)(GRID_OFFSET_X + blockSpacing * 2 + blockSpacing / 2 - 40), (float)blockAreaY}
+        };
+        
+        for (int i = 0; i < 3; i++) {
+            availableBlocks[i].x = positions[i][0];
+            availableBlocks[i].y = positions[i][1];
+            availableBlocks[i].originalX = positions[i][0];
+            availableBlocks[i].originalY = positions[i][1];
         }
     }
     
@@ -1000,45 +1093,52 @@ public:
     
     void drawSettings() {
         // Panel
-        DrawRectangleRounded({ SCREEN_WIDTH/2 - 250, 150, 500, 550 }, 0.05f, 10, PANEL_COLOR);
-        DrawRectangleRoundedLines({ SCREEN_WIDTH/2 - 250, 150, 500, 550 }, 0.05f, 10, { 100, 100, 150, 100 });
+        DrawRectangleRounded({ SCREEN_WIDTH/2 - 250, 120, 500, 530 }, 0.05f, 10, PANEL_COLOR);
+        DrawRectangleRoundedLines({ SCREEN_WIDTH/2 - 250, 120, 500, 530 }, 0.05f, 10, { 100, 100, 150, 100 });
         
         // Title
         const char* title = "SETTINGS";
         int titleWidth = MeasureText(title, 40);
-        DrawText(title, (SCREEN_WIDTH - titleWidth) / 2, 180, 40, TEXT_COLOR);
+        DrawText(title, (SCREEN_WIDTH - titleWidth) / 2, 140, 40, TEXT_COLOR);
         
         // Music slider
-        DrawText("Music Volume", SCREEN_WIDTH/2 - 100, 270, 20, GRAY);
-        Rectangle musicSlider = { SCREEN_WIDTH/2 - 100, 300, 200, 20 };
+        DrawText("Music Volume", SCREEN_WIDTH/2 - 100, 200, 20, GRAY);
+        Rectangle musicSlider = { SCREEN_WIDTH/2 - 100, 230, 200, 20 };
         DrawRectangleRounded(musicSlider, 0.5f, 8, GRID_LINE);
         DrawRectangleRounded({ musicSlider.x, musicSlider.y, musicSlider.width * settings.musicVolume, 20 }, 0.5f, 8, ACCENT_COLOR);
         DrawCircle(musicSlider.x + musicSlider.width * settings.musicVolume, musicSlider.y + 10, 12, TEXT_COLOR);
-        DrawText(TextFormat("%d%%", (int)(settings.musicVolume * 100)), SCREEN_WIDTH/2 + 120, 297, 20, TEXT_COLOR);
+        DrawText(TextFormat("%d%%", (int)(settings.musicVolume * 100)), SCREEN_WIDTH/2 + 120, 227, 20, TEXT_COLOR);
         
         // SFX slider
-        DrawText("SFX Volume", SCREEN_WIDTH/2 - 100, 350, 20, GRAY);
-        Rectangle sfxSlider = { SCREEN_WIDTH/2 - 100, 380, 200, 20 };
+        DrawText("SFX Volume", SCREEN_WIDTH/2 - 100, 270, 20, GRAY);
+        Rectangle sfxSlider = { SCREEN_WIDTH/2 - 100, 300, 200, 20 };
         DrawRectangleRounded(sfxSlider, 0.5f, 8, GRID_LINE);
         DrawRectangleRounded({ sfxSlider.x, sfxSlider.y, sfxSlider.width * settings.sfxVolume, 20 }, 0.5f, 8, ACCENT_COLOR);
         DrawCircle(sfxSlider.x + sfxSlider.width * settings.sfxVolume, sfxSlider.y + 10, 12, TEXT_COLOR);
-        DrawText(TextFormat("%d%%", (int)(settings.sfxVolume * 100)), SCREEN_WIDTH/2 + 120, 377, 20, TEXT_COLOR);
+        DrawText(TextFormat("%d%%", (int)(settings.sfxVolume * 100)), SCREEN_WIDTH/2 + 120, 297, 20, TEXT_COLOR);
         
-        // Toggle butonları
-        Rectangle particlesBtn = { SCREEN_WIDTH/2 - 150, 440, 300, 50 };
+        // Toggle buttons
+        Rectangle particlesBtn = { SCREEN_WIDTH/2 - 150, 350, 300, 45 };
         Color pColor = settings.particlesEnabled ? Color{60, 150, 60, 255} : BUTTON_COLOR;
         DrawRectangleRounded(particlesBtn, 0.3f, 8, pColor);
         DrawText(settings.particlesEnabled ? "Particles: ON" : "Particles: OFF", 
-                particlesBtn.x + 70, particlesBtn.y + 15, 20, TEXT_COLOR);
+                particlesBtn.x + 70, particlesBtn.y + 12, 20, TEXT_COLOR);
         
-        Rectangle shakeBtn = { SCREEN_WIDTH/2 - 150, 510, 300, 50 };
+        Rectangle shakeBtn = { SCREEN_WIDTH/2 - 150, 405, 300, 45 };
         Color sColor = settings.screenShakeEnabled ? Color{60, 150, 60, 255} : BUTTON_COLOR;
         DrawRectangleRounded(shakeBtn, 0.3f, 8, sColor);
         DrawText(settings.screenShakeEnabled ? "Screen Shake: ON" : "Screen Shake: OFF", 
-                shakeBtn.x + 55, shakeBtn.y + 15, 20, TEXT_COLOR);
+                shakeBtn.x + 55, shakeBtn.y + 12, 20, TEXT_COLOR);
+        
+        // Fullscreen button
+        Rectangle fullscreenBtn = { SCREEN_WIDTH/2 - 150, 460, 300, 45 };
+        Color fColor = isFullscreen ? Color{60, 150, 60, 255} : BUTTON_COLOR;
+        DrawRectangleRounded(fullscreenBtn, 0.3f, 8, fColor);
+        DrawText(isFullscreen ? "Fullscreen: ON" : "Fullscreen: OFF", 
+                fullscreenBtn.x + 65, fullscreenBtn.y + 12, 20, TEXT_COLOR);
         
         // Back button
-        drawModernButton({ SCREEN_WIDTH/2 - 150, 600, 300, 60 }, "BACK", hoveredButton == 4, BUTTON_COLOR);
+        drawModernButton({ SCREEN_WIDTH/2 - 150, 530, 300, 55 }, "BACK", hoveredButton == 4, BUTTON_COLOR);
     }
     
     void drawGameOver() {
