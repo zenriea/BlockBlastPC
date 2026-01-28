@@ -1,6 +1,6 @@
 # Block Blast PC
 
-A modern Block Blast puzzle game built with C++ and Raylib.
+A modern Block Blast puzzle game built for PC with C++ and Raylib.
 
 ![Block Blast](icon.png)
 
